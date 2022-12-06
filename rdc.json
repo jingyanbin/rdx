@@ -1,0 +1,6 @@
+{
+  "online_listen": "127.0.0.1:12300",
+  "local_listen": "127.0.0.1:3389",
+  "passwd": "jyb",
+  "open_auth": true
+}
