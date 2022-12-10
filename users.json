@@ -1,4 +1,4 @@
 {
-	"jyb": {"name": "jingyanbin1" , "listen": "0.0.0.0:12000"},
-	"jyb3": {"name": "jingyanbin3" , "listen": "0.0.0.0:12001"}
+	"jyb": {"name": "jingyanbin1" , "listen": "0.0.0.0:12000", "speed":  2},
+	"jyb3": {"name": "jingyanbin3" , "listen": "0.0.0.0:12001", "speed":  2}
 }

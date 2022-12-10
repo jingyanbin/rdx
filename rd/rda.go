@@ -52,7 +52,7 @@ func (m *Rda) Start() bool {
 	data := make([]byte, 8+len(passwd))
 	binary.BigEndian.PutUint64(data, uint64(datetime.Unix()))
 	copy(data[8:], passwd)
-	if !authConn.Send(controllerCmdAuth, data, controllerSeed) {
+	if _, ok := authConn.Send(controllerCmdAuth, data, controllerSeed); !ok {
 		log.Error("授权超时1")
 		return false
 	}
@@ -62,7 +62,7 @@ func (m *Rda) Start() bool {
 		return false
 	}
 
-	cmd, body, success := authConn.Recv(controllerSeed)
+	cmd, body, _, success := authConn.Recv(controllerSeed)
 	if !success {
 		log.Error("授权超时3")
 		return false

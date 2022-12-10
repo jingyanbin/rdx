@@ -47,7 +47,7 @@ func (m *Conn) Close() error {
 	return m.TCPConn.Close()
 }
 
-func (m *Conn) Send(cmd byte, body []byte, seed uint32) bool {
+func (m *Conn) Send(cmd byte, body []byte, seed uint32) (int, bool) {
 	bodyLen := len(body)
 	total := 6 + bodyLen
 	data := make([]byte, total)
@@ -58,38 +58,35 @@ func (m *Conn) Send(cmd byte, body []byte, seed uint32) bool {
 	//log.Info("data1 =============%v, %v", data, string(body))
 	xnet.XOREncrypt(seed, data, 6, bodyLen)
 	//DefaultNetEncrypt(seed, data, 6, uint32(bodyLen))
-	if _, err := xnet.Write(m.TCPConn, data, total); err != nil {
+	if n, err := xnet.Write(m.TCPConn, data, total); err != nil {
 		log.Error("conn send err: %v", err)
-		return false
+		return n, false
+	} else {
+		return n, true
 	}
-	//log.Info("data2 =============%v", data)
-	return true
 }
 
-func (m *Conn) Recv(seed uint32) (cmd byte, body []byte, success bool) {
+func (m *Conn) Recv(seed uint32) (cmd byte, body []byte, n int, success bool) {
 	head := make([]byte, 6)
-	if _, err := xnet.Read(m.TCPConn, head, 6); err != nil {
+	n1, err := xnet.Read(m.TCPConn, head, 6)
+	if err != nil {
 		log.Error("conn read head err: %v", err)
-		return 0, nil, false
+		return 0, nil, n, false
 	}
 	if bcc := xnet.CountBCC(head, 0, 5); bcc != head[5] {
 		log.Error("conn bcc err: %v/%v", bcc, head[5])
-		return 0, nil, false
+		return 0, nil, n, false
 	}
 	bodyLen := int(binary.BigEndian.Uint32(head))
 	cmd = head[4]
 	body = make([]byte, bodyLen)
-	if _, err := xnet.Read(m.TCPConn, body, bodyLen); err != nil {
+	n2, err := xnet.Read(m.TCPConn, body, bodyLen)
+	if err != nil {
 		log.Error("conn read body err: %v", err)
-		return 0, nil, false
+		return 0, nil, n1 + n2, false
 	}
-
-	//log.Info("body0=============%v", body)
 	xnet.XORDecrypt(seed, body, 0, bodyLen)
-	//DefaultNetDecrypt(seed, body, 0, uint32(bodyLen))
-	//log.Info("body1=============%v", body)
-
-	return cmd, body, true
+	return cmd, body, n1 + n2, true
 }
 
 func NewConn(conn *net.TCPConn) *Conn {
@@ -113,9 +110,17 @@ type Rds struct {
 	controlled basal.Map[string, *Conn] //被控者连接 passwd: 连接
 	online     basal.Map[string, *Conn] //在线者 passwd: 连接
 	//controllers basal.Map[string, *Conn] //控制者
-	onlineLis *net.TCPListener
-	authed    basal.Map[string, int64] //ip: 授权结束时间
+	onlineLis       *net.TCPListener
+	authed          basal.Map[string, int64] //ip: 授权结束时间
+	netIoStatistics map[string]*NetIOStatistics
 }
+
+//func (m *Rds) GetNetIOByPasswd(passwd string) *NetIOStatistics {
+//	if v, ok := m.netIoStatistics.Get(passwd); ok {
+//		return v
+//	}
+//	return nil
+//}
 
 func (m *Rds) Close() {
 	if m.onlineLis != nil {
@@ -125,6 +130,7 @@ func (m *Rds) Close() {
 		conn.Close()
 		return true
 	})
+	m.SaveNetIOStatistics()
 }
 
 func (m *Rds) ListenAuth() bool {
@@ -143,7 +149,7 @@ func (m *Rds) ListenAuth() bool {
 		}
 		ip := strings.Split(conn.RemoteAddr().String(), ":")[0]
 		authConn := NewConn(conn)
-		cmd, body, success := authConn.Recv(controllerSeed)
+		cmd, body, _, success := authConn.Recv(controllerSeed)
 		if !success {
 			log.Error("授权失败1: %v", ip)
 			conn.Close()
@@ -219,7 +225,7 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 		return
 	}
 	log.Info("handleListenOnline connected: %v", conn.RemoteAddr())
-	cmd, body, success := conn.Recv(onlineSeed)
+	cmd, body, _, success := conn.Recv(onlineSeed)
 	if !success {
 		log.Error("handleListenOnline recv failed: %v", conn.RemoteAddr())
 		return
@@ -238,18 +244,31 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 	address := m.users.Get(passwd, "listen")
 	if address == nil {
 		log.Error("handleListenOnline not found passwd: %v", passwd)
+		conn.Send(onlineCmdAuth, nil, onlineSeed)
 		return
 	}
-	conn.passwd = passwd
+	speed, err := m.users.GetJson(passwd, "speed").ToFloat64()
+	if err != nil {
+		log.Error("handleListenOnline speed error: %v", err)
+		return
+	}
+
 	controlledListen := m.config.Get("controlled_listen").(string)
+	netIO := m.netIoStatistics[passwd]
+	conn.passwd = passwd
 	extIp := m.config.Get("ext_ip").(string)
 	controlledAddr := extIp + ":" + strings.Split(controlledListen, ":")[1]
 	controllerAddr := extIp + ":" + strings.Split(address.(string), ":")[1]
-	sendData := controlledAddr + "," + controllerAddr
-	if !conn.Send(onlineCmdAuthSuccess, []byte(sendData), onlineSeed) {
+	in, out := netIO.NetIO()
+	sendData := basal.Sprintf("%s,%s,%v,%s,%s", controlledAddr, controllerAddr, speed, in, out)
+	n, ok := conn.Send(onlineCmdAuthSuccess, []byte(sendData), onlineSeed)
+	if !ok {
 		log.Error("handleListenOnline send failed: %v", conn.RemoteAddr())
 		return
 	}
+	log.Info("远程桌面地址: %v, %v", passwd, controllerAddr)
+
+	netIO.AddI(n)
 
 	if old := m.online.Set(passwd, conn); old != nil {
 		old.Close()
@@ -284,7 +303,7 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 		for {
 			controller, err := lis.AcceptTCP()
 			if err != nil {
-				log.Error("handleListenOnline2 AcceptTCP error: %v", err)
+				log.Error("handle listen controller AcceptTCP error: %v", err)
 				return
 			}
 			ip := strings.Split(controller.RemoteAddr().String(), ":")[0]
@@ -340,8 +359,10 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 				controllerConn.Close()
 				continue
 			}
-			go CopyConn(controllerConn, controlledConn)
-			go CopyConn(controlledConn, controllerConn)
+			//go CopyConn(controllerConn, controlledConn)
+			//go CopyConn(controlledConn, controllerConn)
+			go CopyConnIO(controllerConn, controlledConn, netIO.AddO, 32*1024, 0)
+			go CopyConnIO(controlledConn, controllerConn, netIO.AddI, 32*1024, 0)
 		}
 	}()
 
@@ -351,7 +372,7 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 			log.Error("handleListenOnline set read deadline err: %v", err)
 			return
 		}
-		cmd, body, success = conn.Recv(onlineSeed)
+		cmd, body, _, success = conn.Recv(onlineSeed)
 		if !success {
 			log.Error("handleListenOnline recv failed: %v", conn.RemoteAddr())
 			return
@@ -360,10 +381,12 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 			log.Error("收到未知命令: %v, %v", cmd, conn.RemoteAddr())
 			continue
 		}
-		if !conn.Send(cmd, body, onlineSeed) {
+		n, ok = conn.Send(cmd, body, onlineSeed)
+		if !ok {
 			log.Error("handleListenOnline send failed: %v", conn.RemoteAddr())
 			return
 		}
+		netIO.AddI(n)
 	}
 }
 
@@ -398,7 +421,7 @@ func (m *Rds) handleListenControlled(conn *Conn) {
 		}
 	}()
 	log.Info("handleListenControlled connected: %v", conn.RemoteAddr())
-	cmd, body, success := conn.Recv(controlledSeed)
+	cmd, body, _, success := conn.Recv(controlledSeed)
 	if !success {
 		conn.Close()
 		log.Error("handleListenControlled recv failed: %v", conn.RemoteAddr())
@@ -418,7 +441,7 @@ func (m *Rds) handleListenControlled(conn *Conn) {
 		log.Error("handleListenControlled not found passwd: %v", passwd)
 		return
 	}
-	log.Info("隧道连接地址: %v, %v", conn.RemoteAddr(), passwd)
+	log.Info("隧道连接地址: %v, %v", passwd, conn.RemoteAddr())
 
 	conn.passwd = passwd
 	//controlledListen := m.config.Get("controlled_listen").(string)
@@ -453,6 +476,48 @@ func (m *Rds) LoadConfig() {
 	}
 	info, _ = m.config.ToString(true)
 	log.Info("config: %v", info)
+
+	filename = basal.Path.ProgramDirJoin("rds_net_io_statistics.json")
+	m.netIoStatistics = make(map[string]*NetIOStatistics)
+	err := basal.LoadJsonFileTo(filename, &m.netIoStatistics)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			panic(err)
+		}
+	}
+	users := m.users.Interface().(map[string]interface{})
+
+	for passwd := range users {
+		v, ok := m.netIoStatistics[passwd]
+		if !ok {
+
+			v = &NetIOStatistics{}
+			m.netIoStatistics[passwd] = v
+		}
+		i, o := v.NetIO()
+		log.Info("netIoStatistics: %v, 入流量: %v, 出流量: %v", passwd, i, o)
+	}
+	m.SaveNetIOStatistics()
+}
+
+func (m *Rds) SaveNetIOStatistics() {
+	js, err := basal.TryDumpJson(m.netIoStatistics, true)
+	if err != nil {
+		log.Error("SaveNetIOStatistics dump error: %v", err)
+		return
+	}
+	filename := basal.Path.ProgramDirJoin("rds_net_io_statistics.json")
+	f, err := basal.OpenFileB(filename, os.O_WRONLY|os.O_CREATE, 666)
+	if err != nil {
+		log.Error("SaveNetIOStatistics open error: %v", err)
+		return
+	}
+	defer f.Close()
+	_, err = f.WriteString(js)
+	if err != nil {
+		log.Error("SaveNetIOStatistics write error: %v", err)
+		return
+	}
 }
 
 func (m *Rds) Start() {
@@ -461,11 +526,18 @@ func (m *Rds) Start() {
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, os.Interrupt, os.Kill, syscall.SIGTERM)
-		select {
-		case <-sigCh:
-			log.Info("关闭")
-			m.Close()
+		ticker := time.NewTicker(time.Second * 5)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-sigCh:
+				log.Info("关闭")
+				m.Close()
+			case <-ticker.C:
+				m.SaveNetIOStatistics()
+			}
 		}
+
 	}()
 	go m.ListenAuth()
 	go m.ListenControlled()

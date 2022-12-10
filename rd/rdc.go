@@ -13,16 +13,19 @@ import (
 
 type Rdc struct {
 	config *basal.Json
+	io     NetIOStatistics
 }
 
-func (m *Rdc) connect(remoteAddr, localAddr string, passwd string, rdAddr string) (*Conn, *Conn, bool) {
+func (m *Rdc) connect(remoteAddr, localAddr string, passwd string, rdAddr string, speed float64) (*Conn, *Conn, bool) {
 	conn2, err := xnet.ConnectTCP(remoteAddr, time.Second*3)
 	if err != nil {
 		log.Error("connect remote failed: %s, %s", remoteAddr, err.Error())
 		return nil, nil, false
 	}
 	dataRemoteConn := NewConn(conn2)
-	if !dataRemoteConn.Send(controlledCmdAuth, []byte(passwd), controlledSeed) {
+
+	_, ok := dataRemoteConn.Send(controlledCmdAuth, []byte(passwd), controlledSeed)
+	if !ok {
 		log.Error("send remote send failed: %s, %s", remoteAddr, err.Error())
 		conn2.Close()
 		return nil, nil, false
@@ -33,10 +36,16 @@ func (m *Rdc) connect(remoteAddr, localAddr string, passwd string, rdAddr string
 		conn2.Close()
 		return nil, nil, false
 	}
-
 	dataLocalConn := NewConn(conn3)
-	go CopyConn(dataRemoteConn, dataLocalConn)
-	go CopyConn(dataLocalConn, dataRemoteConn)
+	if speed > 0 {
+		log.Info("限速: %vMB/S", speed)
+		size := int(speed * float64(1024*1024) / 1000)
+		go CopyConnIO(dataRemoteConn, dataLocalConn, m.io.AddO, size, time.Millisecond)
+	} else {
+		log.Info("限速: 无限制")
+		go CopyConnIO(dataRemoteConn, dataLocalConn, m.io.AddO, 32*1024, 0)
+	}
+	go CopyConnIO(dataLocalConn, dataRemoteConn, m.io.AddI, 32*1024, 0)
 	log.Info("隧道建立成功, 远程桌面地址: %v", rdAddr)
 	return dataRemoteConn, dataLocalConn, true
 }
@@ -61,29 +70,38 @@ func (m *Rdc) ping() {
 		data[0] = 0
 	}
 	copy(data[1:], passwd)
-	if !serverConn.Send(onlineCmdAuth, data, onlineSeed) {
+	n, ok := serverConn.Send(onlineCmdAuth, data, onlineSeed)
+	if !ok {
 		log.Error("ping send failed: %s, %s", onlineAddr)
 		return
 	}
-
-	cmd, body, success := serverConn.Recv(onlineSeed)
-	if !success {
+	cmd, body, n, ok := serverConn.Recv(onlineSeed)
+	m.io.AddI(n)
+	if !ok {
 		log.Error("ping recv failed: %s", onlineAddr)
 		return
 	}
 	if cmd != onlineCmdAuthSuccess {
-		log.Error("ping recv cmd error: %v", cmd)
+		log.Error("ping recv cmd error: %v, 认证失败", cmd)
 		return
 	}
 
-	addrs := strings.Split(string(body), ",")
-	log.Info("ping resp: %v", addrs)
-	if len(addrs[0]) == 0 {
-		log.Error("ping resp error: %v", addrs[0])
+	resp := strings.Split(string(body), ",")
+	//log.Info("ping resp: %v", resp)
+	if len(resp[0]) == 0 {
+		log.Error("ping resp error: %v", resp)
 		return
 	}
-
-	remoteConn, localConn, ok := m.connect(addrs[0], localAddr, passwd, addrs[1])
+	remoteAddr := resp[0]
+	rdAddr := resp[1]
+	//speed + "," + in + "," + out
+	speed, err := basal.ToFloat64(resp[2])
+	if err != nil {
+		log.Error("ping resp error: %v", resp)
+		return
+	}
+	log.Info("已使用总流量 入流量: %s, 出流量: %s", resp[3], resp[4])
+	remoteConn, localConn, ok := m.connect(remoteAddr, localAddr, passwd, rdAddr, speed)
 	defer func() {
 		log.Info("ping exit")
 		if ok {
@@ -103,7 +121,8 @@ func (m *Rdc) ping() {
 		case <-pingTicker.C:
 			ns := datetime.UnixNano()
 			binary.BigEndian.PutUint64(pingData, uint64(ns))
-			if !serverConn.Send(onlineCmdPing, pingData, onlineSeed) {
+			n, ok = serverConn.Send(onlineCmdPing, pingData, onlineSeed)
+			if !ok {
 				log.Error("ping send failed")
 				return
 			}
@@ -112,15 +131,17 @@ func (m *Rdc) ping() {
 				log.Info("ping set read deadline err: %v", err)
 				return
 			}
-			cmd, body, success = serverConn.Recv(onlineSeed)
-			if !success {
+			cmd, body, n, ok = serverConn.Recv(onlineSeed)
+			m.io.AddI(n)
+			if !ok {
 				log.Error("ping recv failed")
 				return
 			}
 			if cmd == onlineCmdPing {
 				st := binary.BigEndian.Uint64(body)
 				ms := (uint64(datetime.UnixNano()) - st) / 1e6
-				log.Info("ping: %dms", ms)
+				iStr, oStr := m.io.NetIO()
+				log.Info("ping: %dms, 远程桌面地址: %s, 入流量: %v, 出流量: %v", ms, rdAddr, iStr, oStr)
 			} else {
 				log.Info("other cmd: %v", cmd)
 			}
@@ -130,18 +151,18 @@ func (m *Rdc) ping() {
 				reconnectCount = 0
 				connectTicker.Reset(time.Millisecond * 100)
 			}
-			if reconnectCount > 2 {
+			if reconnectCount > 1 {
 				connectTicker.Reset(time.Second * 5)
 				log.Error("重连太频繁,请检查进程是否多开了")
 				continue
 			}
 			if ok {
 				if remoteConn.Closed() || localConn.Closed() {
-					remoteConn, localConn, ok = m.connect(addrs[0], localAddr, passwd, addrs[1])
+					remoteConn, localConn, ok = m.connect(remoteAddr, localAddr, passwd, rdAddr, speed)
 					reconnectCount++
 				}
 			} else {
-				remoteConn, localConn, ok = m.connect(addrs[0], localAddr, passwd, addrs[1])
+				remoteConn, localConn, ok = m.connect(remoteAddr, localAddr, passwd, rdAddr, speed)
 				reconnectCount++
 			}
 
