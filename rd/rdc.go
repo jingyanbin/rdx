@@ -43,9 +43,13 @@ func (m *Rdc) connect(remoteAddr, localAddr string, passwd string, rdAddr string
 		go CopyConnIO(dataRemoteConn, dataLocalConn, m.io.AddO, size, time.Millisecond)
 	} else {
 		log.Info("限速: 无限制")
-		go CopyConnIO(dataRemoteConn, dataLocalConn, m.io.AddO, 32*1024, 0)
+		go CopyConnIO(dataRemoteConn, dataLocalConn, m.io.AddO, bufSize, 0)
 	}
-	go CopyConnIO(dataLocalConn, dataRemoteConn, m.io.AddI, 32*1024, 0)
+	go CopyConnIO(dataLocalConn, dataRemoteConn, m.io.AddI, bufSize, 0)
+
+	//go CopyConn(dataRemoteConn, dataLocalConn)
+	//go CopyConn(dataLocalConn, dataRemoteConn)
+
 	log.Info("隧道建立成功, 远程桌面地址: %v", rdAddr)
 	return dataRemoteConn, dataLocalConn, true
 }

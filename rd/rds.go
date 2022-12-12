@@ -28,6 +28,7 @@ const controlledCmdAuth = 20
 
 const controllerCmdAuth = 30        //控制端认证
 const controllerCmdAuthSuccess = 31 //控制端认证成功
+const bufSize = 32 * 1024
 
 var connIndex uint32
 
@@ -359,10 +360,10 @@ func (m *Rds) handleListenOnline(conn *Conn) {
 				controllerConn.Close()
 				continue
 			}
-			//go CopyConn(controllerConn, controlledConn)
-			//go CopyConn(controlledConn, controllerConn)
-			go CopyConnIO(controllerConn, controlledConn, netIO.AddO, 32*1024, 0)
-			go CopyConnIO(controlledConn, controllerConn, netIO.AddI, 32*1024, 0)
+			go CopyConn(controllerConn, controlledConn)
+			go CopyConn(controlledConn, controllerConn)
+			//go CopyConnIO(controllerConn, controlledConn, netIO.AddO, bufSize, 0)
+			//go CopyConnIO(controlledConn, controllerConn, netIO.AddI, bufSize, 0)
 		}
 	}()
 

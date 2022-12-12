@@ -60,8 +60,9 @@ func (m *NetIOStatistics) NetIO() (i, o string) {
 func CopyConnIO(dst, src *Conn, srcIO NetIOAdd, size int, interval time.Duration) {
 	defer dst.Close()
 	defer src.Close()
-	data := make([]byte, size) //1KB
+	data := make([]byte, size)
 	src.SetReadBuffer(size)
+	//dst.SetWriteBuffer(size)
 	for {
 		n, err := src.Read(data)
 		if err != nil {
