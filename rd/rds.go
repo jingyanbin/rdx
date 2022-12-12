@@ -28,7 +28,7 @@ const controlledCmdAuth = 20
 
 const controllerCmdAuth = 30        //控制端认证
 const controllerCmdAuthSuccess = 31 //控制端认证成功
-const bufSize = 32 * 1024
+const bufSize = 64 * 1024           //64K
 
 var connIndex uint32
 

@@ -62,7 +62,6 @@ func CopyConnIO(dst, src *Conn, srcIO NetIOAdd, size int, interval time.Duration
 	defer src.Close()
 	data := make([]byte, size)
 	src.SetReadBuffer(size)
-	//dst.SetWriteBuffer(size)
 	for {
 		n, err := src.Read(data)
 		if err != nil {
