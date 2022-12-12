@@ -5,9 +5,18 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="b8e8d49e-04c5-493b-b699-dafaf30b306b" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/rd/net_io_statistics.go" beforeDir="false" afterPath="$PROJECT_DIR$/rd/net_io_statistics.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.mod" beforeDir="false" afterPath="$PROJECT_DIR$/go.mod" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/go.sum" beforeDir="false" afterPath="$PROJECT_DIR$/go.sum" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rd/rdc.go" beforeDir="false" afterPath="$PROJECT_DIR$/rd/rdc.go" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/rd/rds.go" beforeDir="false" afterPath="$PROJECT_DIR$/rd/rds.go" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/rda.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/rdc.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/rds.exe" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/release/rdx" beforeDir="false" afterPath="$PROJECT_DIR$/release/rdx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/release/rdx.exe" beforeDir="false" afterPath="$PROJECT_DIR$/release/rdx.exe" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/vendor/modules.txt" beforeDir="false" afterPath="$PROJECT_DIR$/vendor/modules.txt" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />

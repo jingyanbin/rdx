@@ -19,6 +19,13 @@ github.com/vmihailenco/msgpack/codes
 # golang.org/x/net v0.0.0-20201021035429-f5854403a974
 ## explicit; go 1.11
 golang.org/x/net/context
+# golang.org/x/text v0.3.3
+## explicit; go 1.11
+golang.org/x/text/encoding
+golang.org/x/text/encoding/internal
+golang.org/x/text/encoding/internal/identifier
+golang.org/x/text/encoding/simplifiedchinese
+golang.org/x/text/transform
 # google.golang.org/appengine v1.6.7
 ## explicit; go 1.11
 google.golang.org/appengine

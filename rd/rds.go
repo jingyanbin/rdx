@@ -23,7 +23,6 @@ const controllerSeed = 1902
 const onlineCmdAuth = 10
 const onlineCmdAuthSuccess = 11
 const onlineCmdPing = 12
-
 const controlledCmdAuth = 20
 
 const controllerCmdAuth = 30        //控制端认证

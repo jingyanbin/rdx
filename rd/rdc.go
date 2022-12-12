@@ -196,6 +196,15 @@ func (m *Rdc) Start() bool {
 	} else {
 		log.Info("打开远程登录权限成功")
 	}
+
+	//out, err := basal.SystemCmder.Command(`(net start | find "Windows Audio" > nul) && net stop Audiosrv`)
+	//_, err = basal.SystemCmder.Command(`net stop Audiosrv`)
+	//if err != nil {
+	//	log.Error("停止音频服务失败(关闭声音可提升画面质量),请手动关闭")
+	//} else {
+	//	log.Info("停止音频服务成功(关闭声音可提升画面质量)")
+	//}
+
 	for {
 		m.ping()
 		time.Sleep(time.Second * 3)
